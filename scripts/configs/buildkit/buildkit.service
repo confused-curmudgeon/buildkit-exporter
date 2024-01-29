@@ -1,0 +1,12 @@
+[Unit]
+Description=BuildKit
+Documentation=https://github.com/moby/buildkit
+
+[Service]
+Type=notify
+NotifyAccess=all
+# ExecStart=/%h/.buildkit-rootless/bin/buildkitd --rootless --root /%h/.cache/buildkit --group %g
+ExecStart=rootlesskit --net=slirp4netns --copy-up=/%h/.buildkit-rootless --copy-up=/%h/.cache/buildkit --copy-up=/etc --disable-host-loopback /%h/.buildkit-rootless/bin/buildkitd --rootless --addr unix://%t/buildkit.sock --root /%h/.cache/buildkit --group %g
+
+[Install]
+WantedBy=multi-user.target
