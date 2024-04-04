@@ -5,8 +5,8 @@ RUN --mount=type=cache,dst=/go/pkg/mod \
     --mount=type=cache,dst=/root/.cache/go-build \
     go get ./... && \
     go mod tidy && \
-    go build -o buildkit-exporter ./src
+    go build -o buildkit-exporter .
 
 FROM alpine
 COPY --from=builder /build/buildkit-exporter /buildkit-exporter
-ENTRYPOINT /buildkit-exporter
+ENTRYPOINT /buildkit-exporter ${EXP_ARGS}

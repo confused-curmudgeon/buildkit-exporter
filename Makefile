@@ -1,25 +1,35 @@
-localBuilder = ~/.docker/buildx/instances/local
+BUILDX_BUILDER ?= local
+BUILDX_BUILDER_FILE = ~/.docker/buildx/instances/$(BUILDX_BUILDER)
+BUILDKIT_SOCKET_PATH ?= /run/buildkit/buildkitd.sock
+BUILDKIT_ADDR ?= unix://$(BUILDKIT_SOCKET_PATH)
+BUILDX_REMOTE_ADDR ?= $(BUILDKIT_ADDR)
+
 IMAGE_NAME = buildkit-exporter
 
 all: build run
 
-$(localBuilder):
+$(BUILDX_BUILDER_FILE):
 	docker buildx create \
-		--name=local \
+		--name=$(BUILDX_BUILDER) \
 		--use \
 		--bootstrap \
 		--driver=remote \
-		unix://${XDG_RUNTIME_DIR}/buildkit.sock
+		$(BUILDX_REMOTE_ADDR)
 
-build: $(localBuilder)
+build: $(BUILDX_BUILDER_FILE)
 	docker buildx build \
-		--builder=local \
+		--builder=$(BUILDX_BUILDER) \
 		--load \
 		-t $(IMAGE_NAME) \
 		.
 
+.PHONY: run
 run:
-	docker run -it \
-		-v $(XDG_RUNTIME_DIR)/buildkit.sock:/run/buildkit.sock \
-		--user 1000 \
+	$(eval EXP_ARGS="-buildkit-addr $(BUILDKIT_ADDR)")
+	echo $(EXP_ARGS)
+	docker run \
+		--rm \
+		-it \
+		-v $(BUILDKIT_SOCKET_PATH):$(BUILDKIT_SOCKET_PATH) \
+		-e EXP_ARGS=$(EXP_ARGS) \
 		$(IMAGE_NAME)
