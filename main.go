@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/exporter-toolkit/web"
+	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
 const (
@@ -23,63 +26,65 @@ const (
 )
 
 var (
-	buildkitAddr string
-	metricsPath  = "/metrics"
-	scrapeAddr   string
+	metricsPath = kingpin.Flag(
+		"web.telemetry-path",
+		"Path under which to expose metrics.",
+	).Default("/metrics").String()
 
-	cmd = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	buildkitAddr = kingpin.Flag(
+		"buildkit.address",
+		"Address to use for connecting to Buildkit",
+	).Default(defaultBuildkitAddr).String()
+
+	tlsInsecureSkipVerify = kingpin.Flag(
+		"tls.insecure-skip-verify",
+		"Ignore certificate and server verification when using a tls connection.",
+	).Bool()
+
+	toolkitFlags = webflag.AddFlags(kingpin.CommandLine, defaultScrapeAddr)
 )
 
-var Usage = func() {
-	fmt.Fprintf(cmd.Output(), "Usage of %s:\n", os.Args[0])
-	flag.PrintDefaults()
+func init() {
+	prometheus.MustRegister(version.NewCollector("buildkit_exporter"))
 }
 
-func init() {
-	flag.StringVar(&scrapeAddr, "scrape-addr", defaultScrapeAddr, "Scrape address for exporter")
-	flag.StringVar(&buildkitAddr, "buildkit-addr", defaultBuildkitAddr, fmt.Sprintf("Buildkit socket address. Defaults to '%s'. Can be remote TCP URL, ex: tcp://my.buildkit.host:1234", defaultBuildkitAddr))
-
-	flag.Parse()
+func newHandler(logger log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {}
 }
 
 func main() {
-	fmt.Println("buildkit-exporter started!")
-	fmt.Println("Scrape Addr:", scrapeAddr)
-	fmt.Println("Buildkit Addr:", buildkitAddr)
-
-	ctx := context.Background()
-
-	c := NewClient(ctx, &buildkitAddr)
-	c.TotalDiskUsageBytes(ctx)
-
 	promlogConfig := &promlog.Config{}
+	flag.AddFlags(kingpin.CommandLine, promlogConfig)
+	kingpin.Version(version.Print("buildkit_exporter"))
+	kingpin.HelpFlag.Short('h')
+	kingpin.Parse()
 	logger := promlog.New(promlogConfig)
 
-	exporter, err := NewExporter(ctx, false, 10*time.Second, logger)
-	if err != nil {
-		level.Error(logger).Log("msg", "Error creating an exporter", "err", err)
-		os.Exit(1)
-	}
+	level.Info(logger).Log("msg", "Starting buildkit_exporter", "version", version.Info())
+	level.Info(logger).Log("msg", "Build context", "build_context", version.BuildContext())
+	fmt.Println("Scrape Addr:", toolkitFlags.WebListenAddresses)
+	fmt.Println("Buildkit Addr:", *buildkitAddr)
+
+	ctx := context.Background()
+	client := NewClient(ctx, buildkitAddr)
+	exporter := NewExporter(ctx, client, false, 10*time.Second, logger)
 
 	prometheus.MustRegister(exporter)
-	prometheus.MustRegister(version.NewCollector("buildkit_exporter"))
 
-	http.Handle(metricsPath, promhttp.Handler())
+	http.Handle(*metricsPath, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
              <head><title>Buildkit Exporter</title></head>
              <body>
              <h1>Buildkit Exporter</h1>
-             <p><a href='` + metricsPath + `'>Metrics</a></p>
+             <p><a href='` + *metricsPath + `'>Metrics</a></p>
              </body>
              </html>`))
 	})
-	http.Handle("/metrics", promhttp.HandlerFor(promRegistry, promhttp.HandlerOpts{Registry: promRegistry}))
-	log.Fatal(http.ListenAndServe(scrapeAddr, nil))
+	srv := &http.Server{}
+	if err := web.ListenAndServe(srv, toolkitFlags, logger); err != nil {
+		level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
+		os.Exit(1)
+	}
 
-	// srv := &http.Server{}
-	// if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
-	// 	level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
-	// 	os.Exit(1)
-	// }
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"sync"
 	"time"
 
@@ -19,20 +18,21 @@ var (
 // Exporter collects Buildkit stats from the given URI and exports them using
 // the prometheus metrics package.
 type Exporter struct {
-	mutex        sync.RWMutex
-	fetchStat    func() (io.ReadCloser, error)
-	up           prometheus.Gauge
-	totalScrapes prometheus.Counter
-	logger       log.Logger
+	mutex           sync.RWMutex
+	client          *Client
+	up              prometheus.Gauge
+	totalScrapes    prometheus.Counter
+	logger          log.Logger
+	buildkitMetrics []metricInfo
 }
 
+// Verify if Exporter implements prometheus.Collector
+var _ prometheus.Collector = (*Exporter)(nil)
+
 // NewExporter returns an initialized Exporter.
-func NewExporter(ctx context.Context, sslVerify bool, timeout time.Duration, logger log.Logger) (*Exporter, error) {
-
-	var fetchStat func() (io.ReadCloser, error)
-
+func NewExporter(ctx context.Context, client *Client, sslVerify bool, timeout time.Duration, logger log.Logger) *Exporter {
 	return &Exporter{
-		fetchStat: fetchStat,
+		client: client,
 		up: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "up",
@@ -43,8 +43,9 @@ func NewExporter(ctx context.Context, sslVerify bool, timeout time.Duration, log
 			Name:      "exporter_scrapes_total",
 			Help:      "Current total Buildkit scrapes.",
 		}),
-		logger: logger,
-	}, nil
+		logger:          logger,
+		buildkitMetrics: buildkitMetrics,
+	}
 }
 
 // Describe describes all the metrics ever exported by the Buildkit exporter. It
@@ -53,6 +54,9 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- buildkitInfo
 	ch <- buildkitUp
 	ch <- e.totalScrapes.Desc()
+	for _, m := range e.buildkitMetrics {
+		ch <- m.Desc
+	}
 }
 
 // Collect fetches the stats from configured Buildkit location and delivers them
@@ -61,24 +65,18 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.mutex.Lock() // To protect metrics from concurrent collects.
 	defer e.mutex.Unlock()
 
-	// up := e.scrape(ch)
-	up := e.scrape()
+	up := e.scrape(ch)
 
 	ch <- prometheus.MustNewConstMetric(buildkitUp, prometheus.GaugeValue, up)
 	ch <- e.totalScrapes
 }
 
-// func (e *Exporter) scrape(ch chan<- prometheus.Metric) (up float64) {
-func (e *Exporter) scrape() (up float64) {
+func (e *Exporter) scrape(ch chan<- prometheus.Metric) (up float64) {
 	e.totalScrapes.Inc()
-	var err error
-
-	body, err := e.fetchStat()
-	if err != nil {
-		level.Error(e.logger).Log("msg", "Can't scrape Buildkit", "err", err)
-		return 0
+	for _, m := range e.buildkitMetrics {
+		if err := m.fetch(e.client, ch, m.Desc, m.Type); err != nil {
+			level.Error(e.logger).Log("msg", "Error fetching metric", "name", *m.Name, "err", err)
+		}
 	}
-	defer body.Close()
-
 	return 1
 }

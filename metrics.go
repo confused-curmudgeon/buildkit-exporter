@@ -2,34 +2,28 @@ package main
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 var (
+	noopFetcher = func(*Client, chan<- prometheus.Metric, *prometheus.Desc, prometheus.ValueType) error { return nil }
+
 	buildkitMetrics = []metricInfo{
-		newBuildkitMetric("cache_size_total_bytes", "Total bytes used on this node's disk by the entire local Buildkit cache.", prometheus.GaugeValue, []string{}),
-		newBuildkitMetric("build_histories_current", "Count of build histories that have not yet been pruned.", prometheus.GaugeValue, nil),
-		newBuildkitMetric("build_histories_total", "Count of all build histories, pruned or not, seen since exporter startup.", prometheus.CounterValue, nil),
+		newBuildkitMetric("cache_size_total_bytes", "Total bytes used on this node's disk by the entire local Buildkit cache.", prometheus.GaugeValue, []string{}, fetchCacheSizeTotalBytes),
+		newBuildkitMetric("build_histories_current", "Count of build histories that have not yet been pruned.", prometheus.GaugeValue, []string{}, noopFetcher),
+		newBuildkitMetric("build_histories_total", "Count of all build histories, pruned or not, seen since exporter startup.", prometheus.CounterValue, []string{}, noopFetcher),
 	}
 )
 
 type metricInfo struct {
-	Desc *prometheus.Desc
-	Type prometheus.ValueType
+	Desc  *prometheus.Desc
+	Name  *string
+	Type  prometheus.ValueType
+	fetch metricFetcher
 }
 
-func initRegistry(e *Exporter) *prometheus.Registry {
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		stageDurationHist,
-	)
+type metricFetcher func(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error
 
-	return reg
-}
-
-func newBuildkitMetric(metricName string, docString string, t prometheus.ValueType, labelNames []string) metricInfo {
+func newBuildkitMetric(metricName string, docString string, t prometheus.ValueType, labelNames []string, fetcher metricFetcher) metricInfo {
 	return metricInfo{
 		Desc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "cache", metricName),
@@ -37,6 +31,8 @@ func newBuildkitMetric(metricName string, docString string, t prometheus.ValueTy
 			labelNames,
 			prometheus.Labels{},
 		),
-		Type: t,
+		Name:  &metricName,
+		Type:  t,
+		fetch: fetcher,
 	}
 }

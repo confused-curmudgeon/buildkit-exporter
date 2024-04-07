@@ -1,13 +1,15 @@
 FROM golang:1.21.6-alpine AS builder
 ADD . /build
 WORKDIR /build
-RUN apk add git
+
+RUN apk add git make
+RUN --mount=type=cache,dst=/go/bin \
+    make install-promu
+
 RUN --mount=type=cache,dst=/go/pkg/mod \
     --mount=type=cache,dst=/root/.cache/go-build \
-    go get ./... && \
-    go mod tidy && \
-    go build -o buildkit-exporter .
+    make build
 
 FROM alpine
-COPY --from=builder /build/buildkit-exporter /buildkit-exporter
-ENTRYPOINT /buildkit-exporter ${EXP_ARGS}
+COPY --from=builder /build/bin/buildkit-exporter /buildkit-exporter
+ENTRYPOINT /buildkit-exporter ${EXPORTER_ARGS}

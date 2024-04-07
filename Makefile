@@ -1,8 +1,14 @@
-BUILDX_BUILDER ?= local
-BUILDX_BUILDER_FILE = ~/.docker/buildx/instances/$(BUILDX_BUILDER)
-BUILDKIT_SOCKET_PATH ?= /run/buildkit/buildkitd.sock
-BUILDKIT_ADDR ?= unix://$(BUILDKIT_SOCKET_PATH)
-BUILDX_REMOTE_ADDR ?= $(BUILDKIT_ADDR)
+BIN_DIR               ?= $(shell pwd)/bin
+BINARY 								:= buildkit-exporter
+BUILDX_BUILDER 				?= local
+BUILDX_BUILDER_FILE 	?= ~/.docker/buildx/instances/$(BUILDX_BUILDER)
+BUILDKIT_SOCKET_PATH 	?= /run/buildkit/buildkitd.sock
+BUILDKIT_ADDR 				?= unix://$(BUILDKIT_SOCKET_PATH)
+BUILDX_REMOTE_ADDR 		?= $(BUILDKIT_ADDR)
+EXPORTER_ARGS 				 = --buildkit.address=$(BUILDKIT_ADDR) --web.listen-address=$(EXPORTER_ADDR)
+EXPORTER_ADDR 				:= :9220
+PROMU 								:= $(GOPATH)/bin/promu
+PROMU_VERSION 				?= 0.15.0
 
 IMAGE_NAME = buildkit-exporter
 
@@ -16,20 +22,32 @@ $(BUILDX_BUILDER_FILE):
 		--driver=remote \
 		$(BUILDX_REMOTE_ADDR)
 
-build: $(BUILDX_BUILDER_FILE)
+build: $(PROMU)
+	$(PROMU) build --prefix $(BIN_DIR)
+
+run:
+	$(BIN_DIR)/$(BINARY) $(EXPORTER_ARGS)
+
+docker-build: $(BUILDX_BUILDER_FILE)
 	docker buildx build \
 		--builder=$(BUILDX_BUILDER) \
+		--build-arg PROMU_VERSION=$(PROMU_VERSION) \
 		--load \
 		-t $(IMAGE_NAME) \
 		.
 
 .PHONY: run
-run:
-	$(eval EXP_ARGS="-buildkit-addr $(BUILDKIT_ADDR)")
-	echo $(EXP_ARGS)
+docker-run: docker-build
+	echo "ARGS: $(EXPORTER_ARGS)"
 	docker run \
 		--rm \
 		-it \
 		-v $(BUILDKIT_SOCKET_PATH):$(BUILDKIT_SOCKET_PATH) \
-		-e EXP_ARGS=$(EXP_ARGS) \
+		-e EXPORTER_ARGS=$(EXPORTER_ARGS) \
 		$(IMAGE_NAME)
+
+$(PROMU):
+	go install github.com/prometheus/promu@v$(PROMU_VERSION)
+
+install-promu: $(PROMU)
+
