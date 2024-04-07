@@ -1,4 +1,5 @@
-BIN_DIR               ?= $(shell pwd)/bin
+PROJ_DIR 							?= $(shell pwd)
+BIN_DIR               ?= $(PROJ_DIR)/bin
 BINARY 								:= buildkit-exporter
 BUILDX_BUILDER 				?= local
 BUILDX_BUILDER_FILE 	?= ~/.docker/buildx/instances/$(BUILDX_BUILDER)
@@ -51,3 +52,8 @@ $(PROMU):
 
 install-promu: $(PROMU)
 
+run-prometheus:
+	docker run \
+		--network host \
+    -v $(PROJ_DIR)/prometheus.yml:/etc/prometheus/prometheus.yml \
+    prom/prometheus
