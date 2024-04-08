@@ -6,25 +6,32 @@ import (
 
 var (
 	noopFetcher = func(*Client, chan<- prometheus.Metric, *prometheus.Desc, prometheus.ValueType) error { return nil }
+	imageFields = []string{"registry", "path", "name", "tag"}
 
 	buildkitMetrics = []metricInfo{
-		newBuildkitMetric("build_histories_total",
+		newBuildkitMetric("build_histories",
 			"Count of build histories that have not yet been pruned.",
 			prometheus.GaugeValue,
-			[]string{"exporter_type", "image"},
+			append(imageFields, "exporter_type"),
 			fetchHistoriesCount),
 
 		newBuildkitMetric("cache_objects_size_bytes",
 			"Total bytes used on by cache objects.",
 			prometheus.GaugeValue,
-			[]string{"type"},
+			append(imageFields, "type"),
 			fetchCacheSizeTotalBytes),
 
-		newBuildkitMetric("cache_objects_total",
+		newBuildkitMetric("cache_objects",
 			"Count of cache objects that have not yet been pruned.",
 			prometheus.GaugeValue,
 			[]string{"type"},
 			fetchObjectCounts),
+
+		newBuildkitMetric("build_steps",
+			"Count of per-image build steps in histories that have not yet been pruned.",
+			prometheus.GaugeValue,
+			append(imageFields, "count"),
+			fetchBuildStepCounts),
 	}
 )
 

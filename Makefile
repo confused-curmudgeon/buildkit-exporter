@@ -54,6 +54,7 @@ install-promu: $(PROMU)
 
 run-prometheus:
 	docker run \
+		--rm \
 		--network host \
     -v $(PROJ_DIR)/prometheus.yml:/etc/prometheus/prometheus.yml \
     prom/prometheus
