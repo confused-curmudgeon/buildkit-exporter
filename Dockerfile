@@ -11,5 +11,6 @@ RUN --mount=type=cache,dst=/go/pkg/mod \
     make build
 
 FROM alpine
+LABEL org.opencontainers.image.source https://github.com/confused-curmudgeon/buildkit-exporter
 COPY --from=builder /build/bin/buildkit-exporter /buildkit-exporter
 ENTRYPOINT /buildkit-exporter ${EXPORTER_ARGS}
