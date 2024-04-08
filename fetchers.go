@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var sep = ";"
+
 func fetchCacheSizeTotalBytes(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
 	sizes := make(map[buildkitclient.UsageRecordType]int64)
 
@@ -49,7 +51,6 @@ func fetchObjectCounts(client *Client, ch chan<- prometheus.Metric, desc *promet
 func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
 	var collectedErrors error
 	totals := make(map[string]int)
-	sep := ";"
 
 	events, err := client.getAllHistories()
 	if err != nil {
@@ -89,7 +90,6 @@ func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prom
 func fetchBuildStepCounts(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
 	var collectedErrors error
 	totals := make(map[string]int32)
-	sep := ";"
 
 	events, err := client.getAllHistories()
 	if err != nil {
