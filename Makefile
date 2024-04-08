@@ -57,3 +57,8 @@ run-prometheus:
 		--network host \
     -v $(PROJ_DIR)/prometheus.yml:/etc/prometheus/prometheus.yml \
     prom/prometheus
+
+get-histories:
+	@buildctl --addr $(BUILDKIT_ADDR) debug histories --format '{{json .}}' \
+		| jq -c '.' \
+		| jq -s '.[0].record '

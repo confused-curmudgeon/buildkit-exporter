@@ -8,11 +8,27 @@ var (
 	noopFetcher = func(*Client, chan<- prometheus.Metric, *prometheus.Desc, prometheus.ValueType) error { return nil }
 
 	buildkitMetrics = []metricInfo{
-		newBuildkitMetric("cache_size_total_bytes", "Total bytes used on this node's disk by the entire local Buildkit cache.", prometheus.GaugeValue, []string{}, fetchCacheSizeTotalBytes),
-		newBuildkitMetric("build_histories_current", "Count of build histories that have not yet been pruned.", prometheus.GaugeValue, []string{}, noopFetcher),
-		newBuildkitMetric("build_histories_total", "Count of all build histories, pruned or not, seen since exporter startup.", prometheus.CounterValue, []string{}, noopFetcher),
+		newBuildkitMetric("build_histories_total",
+			"Count of build histories that have not yet been pruned.",
+			prometheus.GaugeValue,
+			[]string{"exporter_type", "image"},
+			fetchHistoriesCount),
+
+		newBuildkitMetric("cache_objects_size_bytes",
+			"Total bytes used on by cache objects.",
+			prometheus.GaugeValue,
+			[]string{"type"},
+			fetchCacheSizeTotalBytes),
+
+		newBuildkitMetric("cache_objects_total",
+			"Count of cache objects that have not yet been pruned.",
+			prometheus.GaugeValue,
+			[]string{"type"},
+			fetchObjectCounts),
 	}
 )
+
+type metricFetcher func(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error
 
 type metricInfo struct {
 	Desc  *prometheus.Desc
@@ -20,8 +36,6 @@ type metricInfo struct {
 	Type  prometheus.ValueType
 	fetch metricFetcher
 }
-
-type metricFetcher func(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error
 
 func newBuildkitMetric(metricName string, docString string, t prometheus.ValueType, labelNames []string, fetcher metricFetcher) metricInfo {
 	return metricInfo{
