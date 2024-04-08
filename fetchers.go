@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,6 +47,7 @@ func fetchObjectCounts(client *Client, ch chan<- prometheus.Metric, desc *promet
 }
 
 func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+	var collectedErrors error
 	totals := make(map[string]int)
 	sep := ";"
 
@@ -71,13 +73,21 @@ func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prom
 
 	for key, val := range totals {
 		sp := strings.Split(key, sep)
-		exporterType, image := sp[0], sp[1]
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), exporterType, image)
+		exporterType, imageFQN := sp[0], sp[1]
+
+		img, err := splitImageFQN(imageFQN)
+		if err != nil {
+			collectedErrors = errors.Join(collectedErrors, err)
+		}
+
+		labelValues := append(img.Values(), exporterType)
+		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), labelValues...)
 	}
 	return nil
 }
 
 func fetchBuildStepCounts(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+	var collectedErrors error
 	totals := make(map[string]int32)
 	sep := ";"
 
@@ -102,17 +112,21 @@ func fetchBuildStepCounts(client *Client, ch chan<- prometheus.Metric, desc *pro
 		totals[fmt.Sprintf("%s%s%s", "completed", sep, image)] += completed
 		totals[fmt.Sprintf("%s%s%s", "total", sep, image)] += total
 		totals[fmt.Sprintf("%s%s%s", "uncached", sep, image)] += uncached
+		totals[fmt.Sprintf("%s%s%s", "failed", sep, image)] += failed
 	}
 
 	for key, val := range totals {
 		sp := strings.Split(key, sep)
 		exporterType, imageFQN := sp[0], sp[1]
+
 		img, err := splitImageFQN(imageFQN)
 		if err != nil {
-
+			collectedErrors = errors.Join(collectedErrors, err)
 		}
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), exporterType, image)
+
+		labelValues := append(img.Values(), exporterType)
+		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), labelValues...)
 	}
 
-	return nil
+	return collectedErrors
 }

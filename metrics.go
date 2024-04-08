@@ -18,7 +18,7 @@ var (
 		newBuildkitMetric("cache_objects_size_bytes",
 			"Total bytes used on by cache objects.",
 			prometheus.GaugeValue,
-			append(imageFields, "type"),
+			[]string{"type"},
 			fetchCacheSizeTotalBytes),
 
 		newBuildkitMetric("cache_objects",
