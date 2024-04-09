@@ -33,10 +33,11 @@ var (
 type Exporter struct {
 	mutex           sync.RWMutex
 	client          *Client
+	ctx             context.Context
 	up              prometheus.Gauge
 	totalScrapes    prometheus.Counter
 	logger          log.Logger
-	buildkitMetrics []metricInfo
+	buildkitMetrics map[string]prometheus.Collector
 }
 
 // Verify if Exporter implements prometheus.Collector
@@ -46,6 +47,7 @@ var _ prometheus.Collector = (*Exporter)(nil)
 func NewExporter(ctx context.Context, client *Client, sslVerify bool, timeout time.Duration, logger log.Logger) *Exporter {
 	return &Exporter{
 		client: client,
+		ctx:    client.ctx,
 		up: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "up",
@@ -67,8 +69,9 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- buildkitInfo
 	ch <- buildkitUp
 	ch <- e.totalScrapes.Desc()
-	for _, m := range e.buildkitMetrics {
-		ch <- m.Desc
+	for name, metric := range e.buildkitMetrics {
+		level.Debug(e.logger).Log("msg", "Described metric", "name", name)
+		metric.Describe(ch)
 	}
 }
 
@@ -78,18 +81,24 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.mutex.Lock() // To protect metrics from concurrent collects.
 	defer e.mutex.Unlock()
 
-	up := e.scrape(ch)
+	up := e.scrape()
+
+	for _, collector := range e.buildkitMetrics {
+		collector.Collect(ch)
+	}
 
 	ch <- prometheus.MustNewConstMetric(buildkitUp, prometheus.GaugeValue, up)
 	ch <- e.totalScrapes
 }
 
-func (e *Exporter) scrape(ch chan<- prometheus.Metric) (up float64) {
+func (e *Exporter) scrape() (up float64) {
 	e.totalScrapes.Inc()
-	for _, m := range e.buildkitMetrics {
-		if err := m.fetch(e.client, ch, m.Desc, m.Type); err != nil {
-			level.Error(e.logger).Log("msg", "Error fetching metric", "name", *m.Name, "err", err)
+
+	for name, collector := range e.buildkitMetrics {
+		if err := fetchers[name](e, collector); err != nil {
+			return 0
 		}
 	}
+
 	return 1
 }

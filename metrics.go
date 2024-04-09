@@ -17,56 +17,75 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	namespace = "buildkit"
+
+	subsystemBuild        = "build"
+	subsystemCacheObjects = "cache_objects"
+
+	gaugeBuildHistories       = "histories"
+	gaugeBuildSteps           = "steps"
+	gaugeCacheObjectSizeBytes = "size_bytes"
+	gaugeCacheObjects         = "count"
+
+	histogramBuildDuration = "duration_seconds"
+)
+
 var (
 	noopFetcher = func(*Client, chan<- prometheus.Metric, *prometheus.Desc, prometheus.ValueType) error { return nil }
 	imageFields = []string{"registry", "path", "name", "tag"}
 
-	buildkitMetrics = []metricInfo{
-		newBuildkitMetric("build_histories",
-			"Count of build histories that have not yet been pruned.",
-			prometheus.GaugeValue,
+	buildkitMetrics = map[string]prometheus.Collector{
+		gaugeBuildHistories: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystemBuild,
+				Name:      gaugeBuildHistories,
+				Help:      "Count of build histories that have not yet been pruned.",
+			},
 			append(imageFields, "exporter_type"),
-			fetchHistoriesCount),
-
-		newBuildkitMetric("cache_objects_size_bytes",
-			"Total bytes used on by cache objects.",
-			prometheus.GaugeValue,
-			[]string{"type"},
-			fetchCacheSizeTotalBytes),
-
-		newBuildkitMetric("cache_objects",
-			"Count of cache objects that have not yet been pruned.",
-			prometheus.GaugeValue,
-			[]string{"type"},
-			fetchObjectCounts),
-
-		newBuildkitMetric("build_steps",
-			"Count of per-image build steps in histories that have not yet been pruned.",
-			prometheus.GaugeValue,
+		),
+		gaugeBuildSteps: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystemBuild,
+				Name:      gaugeBuildSteps,
+				Help:      "Count of per-image build steps in histories that have not yet been pruned.",
+			},
 			append(imageFields, "count"),
-			fetchBuildStepCounts),
+		),
+		gaugeCacheObjectSizeBytes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystemCacheObjects,
+				Name:      gaugeCacheObjectSizeBytes,
+				Help:      "Total bytes used by cache objects of each type that have not yet been pruned.",
+			},
+			[]string{"type"},
+		),
+		gaugeCacheObjects: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystemCacheObjects,
+				Name:      gaugeCacheObjects,
+				Help:      "Count of cache objects of each type that have not yet been pruned.",
+			},
+			[]string{"type"},
+		),
+		histogramBuildDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystemBuild,
+				Name:      histogramBuildDuration,
+				Help:      "Time taken to complete an image build.",
+				Buckets: []float64{
+					30, 60, 90, 120,
+					180, 240, 300, 450,
+					600, 750, 900, 1050,
+					1200,
+				},
+			},
+			append(imageFields, "exporter_type", "status"),
+		),
 	}
 )
-
-type metricFetcher func(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error
-
-type metricInfo struct {
-	Desc  *prometheus.Desc
-	Name  *string
-	Type  prometheus.ValueType
-	fetch metricFetcher
-}
-
-func newBuildkitMetric(metricName string, docString string, t prometheus.ValueType, labelNames []string, fetcher metricFetcher) metricInfo {
-	return metricInfo{
-		Desc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "cache", metricName),
-			docString,
-			labelNames,
-			prometheus.Labels{},
-		),
-		Name:  &metricName,
-		Type:  t,
-		fetch: fetcher,
-	}
-}

@@ -54,7 +54,10 @@ func (c *Client) getAllHistories() ([]*controlapi.BuildHistoryEvent, error) {
 		} else if err != nil {
 			return nil, err
 		}
-		events = append(events, ev)
+
+		if ev.Type == controlapi.BuildHistoryEventType_COMPLETE {
+			events = append(events, ev)
+		}
 	}
 
 	return events, nil
