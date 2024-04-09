@@ -22,12 +22,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var sep = ";"
+type fetcher func(e *Exporter, c prometheus.Collector) error
 
-func fetchCacheSizeTotalBytes(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+var (
+	sep = ";"
+
+	fetchers = map[string]fetcher{
+		gaugeCacheObjectSizeBytes: fetchGaugeCacheObjectSizeBytes,
+		gaugeCacheObjects:         fetchGaugeCacheObjectCounts,
+		gaugeBuildHistories:       fetchGaugeBuildHistories,
+		gaugeBuildSteps:           fetchGaugeBuildSteps,
+		histogramBuildDuration:    fetchHistogramBuildDuration,
+	}
+)
+
+func fetchGaugeCacheObjectSizeBytes(e *Exporter, c prometheus.Collector) error {
+	metric := c.(*prometheus.GaugeVec)
 	sizes := make(map[buildkitclient.UsageRecordType]int64)
 
-	duInfo, err := client.DiskUsage(client.ctx)
+	duInfo, err := e.client.DiskUsage(e.ctx)
 	if err != nil {
 		return err
 	}
@@ -37,16 +50,17 @@ func fetchCacheSizeTotalBytes(client *Client, ch chan<- prometheus.Metric, desc 
 	}
 
 	for key, val := range sizes {
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), string(key))
+		metric.WithLabelValues(string(key)).Set(float64(val))
 	}
 
 	return nil
 }
 
-func fetchObjectCounts(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+func fetchGaugeCacheObjectCounts(e *Exporter, c prometheus.Collector) error {
+	metric := c.(*prometheus.GaugeVec)
 	counts := make(map[buildkitclient.UsageRecordType]int)
 
-	duInfo, err := client.DiskUsage(client.ctx)
+	duInfo, err := e.client.DiskUsage(e.ctx)
 	if err != nil {
 		return err
 	}
@@ -56,33 +70,35 @@ func fetchObjectCounts(client *Client, ch chan<- prometheus.Metric, desc *promet
 	}
 
 	for key, val := range counts {
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), string(key))
+		metric.WithLabelValues(string(key)).Set(float64(val))
+
 	}
 	return nil
 }
 
-func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+func fetchGaugeBuildHistories(e *Exporter, c prometheus.Collector) error {
+	metric := c.(*prometheus.GaugeVec)
 	var collectedErrors error
 	totals := make(map[string]int)
 
-	events, err := client.getAllHistories()
+	events, err := e.client.getAllHistories()
 	if err != nil {
 		return err
 	}
 
 	for _, event := range events {
-		var k string
+		var image string
 		if event.Record.Exporters != nil {
-			k = fmt.Sprintf("%s%s%s",
+			image = fmt.Sprintf("%s%s%s",
 				event.Record.Exporters[0].Type,
 				sep,
 				event.Record.Exporters[0].Attrs["name"],
 			)
 		} else {
-			k = "cache-only;undefined"
+			image = "cache-only;undefined"
 		}
 
-		totals[k] += 1
+		totals[image] += 1
 	}
 
 	for key, val := range totals {
@@ -95,16 +111,17 @@ func fetchHistoriesCount(client *Client, ch chan<- prometheus.Metric, desc *prom
 		}
 
 		labelValues := append(img.Values(), exporterType)
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), labelValues...)
+		metric.WithLabelValues(labelValues...).Set(float64(val))
 	}
 	return nil
 }
 
-func fetchBuildStepCounts(client *Client, ch chan<- prometheus.Metric, desc *prometheus.Desc, valType prometheus.ValueType) error {
+func fetchGaugeBuildSteps(e *Exporter, c prometheus.Collector) error {
+	metric := c.(*prometheus.GaugeVec)
 	var collectedErrors error
 	totals := make(map[string]int32)
 
-	events, err := client.getAllHistories()
+	events, err := e.client.getAllHistories()
 	if err != nil {
 		return err
 	}
@@ -138,7 +155,45 @@ func fetchBuildStepCounts(client *Client, ch chan<- prometheus.Metric, desc *pro
 		}
 
 		labelValues := append(img.Values(), exporterType)
-		ch <- prometheus.MustNewConstMetric(desc, valType, float64(val), labelValues...)
+		metric.WithLabelValues(labelValues...).Set(float64(val))
+	}
+
+	return collectedErrors
+}
+
+func fetchHistogramBuildDuration(e *Exporter, c prometheus.Collector) error {
+	metric := c.(*prometheus.HistogramVec)
+	var collectedErrors error
+
+	events, err := e.client.getAllHistories()
+	if err != nil {
+		return err
+	}
+
+	for _, event := range events {
+		exporterType := "cache-only"
+		img := &image{}
+		status := "success"
+		if event.Record.GetError() != nil {
+			status = "failed"
+		}
+
+		elapsed := event.Record.CompletedAt.Sub(*event.Record.CreatedAt).Seconds()
+
+		if event.Record.Exporters != nil {
+			img, err = splitImageFQN(event.Record.Exporters[0].Attrs["name"])
+			if err != nil {
+				collectedErrors = errors.Join(collectedErrors, err)
+				continue
+			}
+
+			exporterType = event.Record.Exporters[0].Type
+		} else {
+			img = &image{name: "undefined"}
+		}
+
+		labelValues := append(img.Values(), exporterType, status)
+		metric.WithLabelValues(labelValues...).Observe(elapsed)
 	}
 
 	return collectedErrors

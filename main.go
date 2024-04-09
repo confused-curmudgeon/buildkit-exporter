@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,7 +34,6 @@ import (
 const (
 	defaultBuildkitAddr = "unix:///run/buildkit/buildkitd.sock"
 	defaultScrapeAddr   = ":9220"
-	namespace           = "buildkit"
 )
 
 var (
@@ -59,10 +57,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("buildkit_exporter"))
-}
 
-func newHandler(logger log.Logger) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {}
 }
 
 func main() {
@@ -83,6 +78,13 @@ func main() {
 	exporter := NewExporter(ctx, client, false, 10*time.Second, logger)
 
 	prometheus.MustRegister(exporter)
+	// foo := prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"a", "b"})
+	// foo.WithLabelValues("foo", "bar").Inc()
+	// var ch chan *prometheus.Desc
+	// m, err := foo.GetMetricWithLabelValues("foo", "bar")
+	// if err != nil {
+	// 	fmt.Println("ERROR", m.Describe)
+	// }
 
 	http.Handle(*metricsPath, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +101,4 @@ func main() {
 		level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
 		os.Exit(1)
 	}
-
 }

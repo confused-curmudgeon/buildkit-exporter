@@ -21,6 +21,7 @@ BUILDKIT_ADDR 				?= unix://$(BUILDKIT_SOCKET_PATH)
 BUILDX_REMOTE_ADDR 		?= $(BUILDKIT_ADDR)
 EXPORTER_ARGS 				 = --buildkit.address=$(BUILDKIT_ADDR) --web.listen-address=$(EXPORTER_ADDR)
 EXPORTER_ADDR 				:= :9220
+EXPORTER_VERSION 			:= $(shell cat VERSION)
 PROMU 								:= $(GOPATH)/bin/promu
 PROMU_VERSION 				?= 0.15.0
 
@@ -79,5 +80,5 @@ get-histories:
 
 push-ghcr: docker-build
 	@echo $(GITHUB_TOKEN_BUILDKIT_EXPORTER_GHCR) | docker login ghcr.io -u cboggs --password-stdin
-	docker tag buildkit-exporter:latest ghcr.io/confused-curmudgeon/buildkit-exporter:v0.1.0
-	docker push ghcr.io/confused-curmudgeon/buildkit-exporter:v0.1.0
+	docker tag buildkit-exporter:latest ghcr.io/confused-curmudgeon/buildkit-exporter:v$(EXPORTER_VERSION)
+	docker push ghcr.io/confused-curmudgeon/buildkit-exporter:v$(EXPORTER_VERSION)
