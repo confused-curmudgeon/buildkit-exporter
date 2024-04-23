@@ -52,6 +52,11 @@ var (
 		"Ignore certificate and server verification when using a tls connection.",
 	).Bool()
 
+	includedLabels = kingpin.Flag(
+		"include-label",
+		"Include labels from build history FrontendAttrs as labels on metrics, where applicable. Specify once per label to be collected. Example: --include-label foo --include-label meep",
+	).Strings()
+
 	toolkitFlags = webflag.AddFlags(kingpin.CommandLine, defaultScrapeAddr)
 )
 
@@ -72,19 +77,15 @@ func main() {
 	level.Info(logger).Log("msg", "Build context", "build_context", version.BuildContext())
 	fmt.Println("Scrape Addr:", toolkitFlags.WebListenAddresses)
 	fmt.Println("Buildkit Addr:", *buildkitAddr)
+	fmt.Println("Image Labels Included:", *includedLabels)
 
 	ctx := context.Background()
 	client := NewClient(ctx, buildkitAddr)
-	exporter := NewExporter(ctx, client, false, 10*time.Second, logger)
+
+	cfg := &ExporterConfig{IncludedLabels: *includedLabels}
+	exporter := NewExporter(ctx, client, false, 10*time.Second, cfg, logger)
 
 	prometheus.MustRegister(exporter)
-	// foo := prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"a", "b"})
-	// foo.WithLabelValues("foo", "bar").Inc()
-	// var ch chan *prometheus.Desc
-	// m, err := foo.GetMetricWithLabelValues("foo", "bar")
-	// if err != nil {
-	// 	fmt.Println("ERROR", m.Describe)
-	// }
 
 	http.Handle(*metricsPath, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

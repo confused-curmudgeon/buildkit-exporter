@@ -28,6 +28,10 @@ var (
 	buildkitUp   = prometheus.NewDesc(prometheus.BuildFQName(namespace, "", "up"), "Was the last scrape of Buildkit successful.", nil, nil)
 )
 
+type ExporterConfig struct {
+	IncludedLabels []string
+}
+
 // Exporter collects Buildkit stats from the given URI and exports them using
 // the prometheus metrics package.
 type Exporter struct {
@@ -38,13 +42,14 @@ type Exporter struct {
 	totalScrapes    prometheus.Counter
 	logger          log.Logger
 	buildkitMetrics map[string]prometheus.Collector
+	cfg             *ExporterConfig
 }
 
 // Verify if Exporter implements prometheus.Collector
 var _ prometheus.Collector = (*Exporter)(nil)
 
 // NewExporter returns an initialized Exporter.
-func NewExporter(ctx context.Context, client *Client, sslVerify bool, timeout time.Duration, logger log.Logger) *Exporter {
+func NewExporter(ctx context.Context, client *Client, sslVerify bool, timeout time.Duration, cfg *ExporterConfig, logger log.Logger) *Exporter {
 	return &Exporter{
 		client: client,
 		ctx:    client.ctx,
@@ -60,6 +65,7 @@ func NewExporter(ctx context.Context, client *Client, sslVerify bool, timeout ti
 		}),
 		logger:          logger,
 		buildkitMetrics: buildkitMetrics,
+		cfg:             cfg,
 	}
 }
 

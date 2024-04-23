@@ -33,7 +33,7 @@ const (
 
 var (
 	noopFetcher = func(*Client, chan<- prometheus.Metric, *prometheus.Desc, prometheus.ValueType) error { return nil }
-	imageFields = []string{"registry", "path", "name", "tag"}
+	imageFields = append([]string{"registry", "path", "name", "tag"}, *includedLabels...)
 
 	buildkitMetrics = map[string]prometheus.Collector{
 		gaugeBuildHistories: prometheus.NewGaugeVec(
